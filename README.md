@@ -1,11 +1,12 @@
 # 百炼 AI Skills
 
-给 Claude Code 增加 **AI 图片生成** 和 **AI 视频生成** 两个技能，后端调用阿里云百炼 token-plan（通义万相 2.7 + HappyHorse 1.1），全程无需额外装 CLI。
+给 Claude Code 增加 **AI 图片生成**、**AI 视频生成** 和 **视频解析** 三个技能：前两者后端调用阿里云百炼 token-plan（通义万相 2.7 + HappyHorse 1.1），后者纯本地把视频拆成可重制的分镜清单（`shots.json`）与人类留档报告（`report.md`）。三者配合即可"解析一段视频 → 让 AI 重制"，全程无需额外装 CLI（视频解析缺 ffmpeg 时会自动 pip 装 imageio-ffmpeg）。
 
 | Skill | 能力 | 模型 |
 |-------|------|------|
 | `ai-image-generation` | 文生图、图片编辑、多图参考、组图，最高 4K | `wan2.7-image` / `wan2.7-image-pro` |
 | `ai-video-generation` | 文生视频、图生视频、参考图生视频，720P/1080P，3-15 秒 | `happyhorse-1.1-t2v/i2v/r2v` |
+| `video-to-shots` | 解析视频 → 可重制分镜清单 `shots.json` + 人类留档 `report.md`（纯本地，不调 API） | 本地视觉解析（输出对接 `happyhorse-1.1-*`） |
 
 ## 🚀 安装（一句话）
 
@@ -31,6 +32,7 @@ Claude 会自动克隆仓库、复制 skills、配置 Key，你只需要粘贴�
    mkdir -p ~/.claude/skills
    cp -r /tmp/bailian-skills/skills/ai-video-generation ~/.claude/skills/
    cp -r /tmp/bailian-skills/skills/ai-image-generation ~/.claude/skills/
+   cp -r /tmp/bailian-skills/skills/video-to-shots ~/.claude/skills/
    ```
 
 3. **配置 API Key**：询问用户索取阿里云百炼 token-plan 的 API Key（`sk-` 开头）。
@@ -58,10 +60,11 @@ Claude 会自动克隆仓库、复制 skills、配置 Key，你只需要粘贴�
 5. 提醒用户**重启 Claude Code**，然后即可使用：
    - "画一张夕阳下的橘猫，水彩风格"
    - "生成一条视频：无人机航拍森林"
+   - "解析这个视频，生成可重制的分镜清单和提示词"
 
 ## 📦 手动安装（人类版）
 
-1. 复制 `skills/` 下两个目录到 `~/.claude/skills/`
+1. 复制 `skills/` 下全部子目录（`ai-image-generation` / `ai-video-generation` / `video-to-shots`）到 `~/.claude/skills/`
 2. 在 `~/.claude/settings.json` 的 `env` 中加入：
    ```json
    { "env": { "BAILIAN_API_KEY": "sk-你的key" } }
@@ -78,6 +81,8 @@ Claude 会自动克隆仓库、复制 skills、配置 Key，你只需要粘贴�
 - 生成一条视频：一只猫在草地上奔跑，阳光明媚
 - 把这张图片变成视频，镜头缓缓推进：[图片]
 - 用这张人物照片作参考，生成他在海边散步的视频（r2v，保持人物一致）
+- 解析当前目录这个视频，拆成可重制的分镜清单和提示词（video-to-shots，产出 `shots.json` + `report.md`）
+- 用 video-to-shots 解析出的 `shots.json`，逐镜头调 ai-video-generation 重制这条视频
 
 生成结果默认存到 `~/ai-out/image/` 和 `~/ai-out/video/` 下按日期分好的文件夹；想改位置直接告诉 Claude。
 
@@ -88,6 +93,7 @@ Claude 会自动克隆仓库、复制 skills、配置 Key，你只需要粘贴�
 | 文生图 / 图片编辑 / 多图参考 | ✅ |
 | 文生视频 / 图生视频 / 参考图生视频 | ✅ |
 | 视频编辑（视频生视频） | ❌ 套餐不含，需普通 DashScope Key 按量付费 |
+| 视频解析为分镜清单（video-to-shots） | ✅ 纯本地，不消耗额度；缺 ffmpeg 时自动 pip 装 imageio-ffmpeg |
 
 ## 常见问题
 
