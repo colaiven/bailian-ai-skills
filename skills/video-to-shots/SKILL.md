@@ -45,7 +45,7 @@ allowed-tools: Read, Write, Glob, Bash(*)
     "resolution": "1038x720",
     "fps": 30,
     "has_audio": true,
-    "frame_interval_sec": 2,                 // 抽帧间隔，默认2
+    "frame_interval_sec": 1,                 // 抽帧间隔，默认1
     "parsed_by": "ffmpeg 抽帧 + 逐帧视觉识别 + 字幕OCR + volumedetect",
     "style_prefix": "整片统一风格前缀，会被拼到每个 shot 的 prompt 前",
     "aspect_decision": "源画幅说明 + 生成建议：16:9后加黑边 或 9:16填满",
@@ -56,13 +56,13 @@ allowed-tools: Read, Write, Glob, Bash(*)
     {
       "id": "shot_01",
       "timecode": "00:00-00:02",
-      "first_frame_local": "video_frames/f_001.jpg",   // 本地，i2v 上传前参考
+      "first_frame_local": "video_frames/<当天日期>/f_001.jpg",   // 本地（日期子目录），i2v 上传前参考
       "url": null,                                     // 传图床后回填公网URL
       "url_status": "pending",                         // pending|uploaded|skipped
       "body": {                                        // 字段名=API body，可直接POST
         "model": "happyhorse-1.1-i2v",                 // url_status=skipped时改t2v并删media、补ratio
         "input": {
-          "prompt": "<style_prefix> + 本镜单一画面与运动描述",
+          "prompt": "<style_prefix> + 主体 + 动作 + 环境 + 机位",
           "media": [ { "type": "first_frame", "url": "<=回填.url>" } ]
         },
         "parameters": { "resolution": "720P", "duration": 3 }   // i2v无ratio；t2v需补ratio
@@ -143,6 +143,22 @@ allowed-tools: Read, Write, Glob, Bash(*)
 
 ---
 
+## 提示词撰写规范（`shots[].body.input.prompt`）
+
+每条 prompt = `meta.style_prefix` + 下表**四个维度**。逐帧识别的素材按此收拢，缺哪个维度补哪个，不写流水账：
+
+| 维度 | 必写内容 | 示例片段 |
+|---|---|---|
+| 主体 | 外貌（发型/发色/五官特征）、人物表情、服装要点（款式/颜色/关键配饰） | 银灰长发少女，面无表情，黑色水手服、粉色领结 |
+| 动作 | 这 3–15s 内发生什么——一条动作线，不塞多个事件 | 缓步穿过走廊，右手轻抚墙面 |
+| 环境 | 场所 / 氛围 / 光线调色 | 黄昏教室走廊，暖橘逆光，胶片颗粒感 |
+| 机位 | 景别 / 角度 / 运动方式与速度 | 中景，低机位仰拍，缓慢横移跟拍 |
+
+- **一镜一画面**：一条 prompt 只描述一个连续画面 + 一条动作线；多场景必须拆成多个 shot。
+- 四维度用逗号衔接成 1–3 句自然描述，**不要**写成「主体：xx 动作：xx」的字段清单。
+
+---
+
 ## 执行流程
 
 ### 1. 定位视频
@@ -162,21 +178,22 @@ echo "$FFMPEG"
 `"$FFMPEG" -i "<video>"` 抓 `Duration` / `Stream ... Video: ... WxH ... fps` / `Stream ... Audio`（有无音轨）。
 
 ### 4. 抽帧
-默认 `fps=0.5`（每 2 秒 1 帧）。输出到 `<cwd>/video_frames/`：
+默认 `fps=1`（每 1 秒 1 帧）。输出到 `<cwd>/video_frames/<当天日期>/`（日期子目录 = 运行当天 `date +%F`，如 `2026-08-02`）：
 ```bash
-mkdir -p video_frames
-"$FFMPEG" -y -i "<video>" -vf fps=0.5 -q:v 2 video_frames/f_%03d.jpg
+DAY=$(date +%F)
+mkdir -p "video_frames/$DAY"
+"$FFMPEG" -y -i "<video>" -vf fps=1 -q:v 2 "video_frames/$DAY/f_%03d.jpg"
 ```
 帧 i（从 1）对应时间 ≈ `(i-1)*interval` 秒。
 
 ### 5. 逐帧视觉识别（主会话 Read，**不派子代理**）
-用**绝对路径** `Read` 每张 jpg，可同回复并行多张。每帧记录：场景/背景、主体、动作、服装、机位、**画面内字幕文字**。
+用**绝对路径** `Read` 每张 jpg，可同回复并行多张。每帧记录：主体（外貌/表情/服装）、动作、环境（场景/氛围/光线调色）、机位、**画面内字幕文字**——与「提示词撰写规范」四维度对齐。
 
 ### 6. 合并镜头（切镜检测）
 相邻帧若**背景或服装突变** → 视为切镜，归入新 shot。为每个 shot 定：
 - `timecode` = 首帧时间 ~ 末帧时间（见换算规则）。
 - `first_frame_local` = 该 shot 首帧路径。
-- `prompt` = `meta.style_prefix` + 该镜“单一画面 + 镜头运动”描述（**一镜一画面，不塞多场景**）。
+- `prompt` = `meta.style_prefix` + 按「提示词撰写规范」四维度（主体/动作/环境/机位）收拢的描述（**一镜一画面，不塞多场景**）。
 
 ### 7. 字幕归位
 把每帧 OCR 字幕按帧时间去重合并（连续相同字幕合并为一条），形成 `captions_full`（带 `start/end`），并按 shot 时间窗切片填 `shots[].captions`。无字幕则空数组。
@@ -215,7 +232,7 @@ print('shots:',len(d['shots']),'| pending url:',sum(s['url_status']=='pending' f
 
 ## 镜头 / 字幕 / 时长 换算规则
 
-- `interval` = 1 / 抽帧 fps（默认 2s）。帧 i 时间 = `(i-1)*interval`。
+- `interval` = 1 / 抽帧 fps（默认 1s）。帧 i 时间 = `(i-1)*interval`。
 - shot 的 `timecode` = `首帧时间` ~ `下一 shot 首帧时间`（末个 shot 取到 `duration_sec`）。
 - shot 的 `body.parameters.duration` = `clamp(round(末-首+interval 的覆盖秒数), 3, 15)`。
 - caption 的 `start/end` = 该字幕首次出现帧时间 ~ 下一次变化帧时间（末条取到 `duration_sec`）。
